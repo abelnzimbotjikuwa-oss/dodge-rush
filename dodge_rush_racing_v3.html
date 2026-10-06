@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Dodge Rush Racing V3</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0f16;color:#fff;font-family:Arial,sans-serif;display:flex;justify-content:center;min-height:100vh;overflow:hidden}
+#app{width:min(100vw,540px);padding:10px}h1{text-align:center;margin:2px 0 7px;font-size:28px}
+#stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px}.stat{background:#1a2230;border-radius:9px;padding:6px;text-align:center;font-size:11px}.stat b{display:block;font-size:16px;margin-top:2px}
+canvas{width:100%;display:block;background:#333;border:2px solid #394456;border-radius:14px;touch-action:none}
+#controls{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:8px;margin:8px 0}button{border:0;border-radius:12px;background:#293449;color:#fff;font-weight:bold;font-size:21px;padding:11px 8px}button:active{transform:scale(.96)}
+#nitro{background:#1677c8}.small{font-size:14px;padding:9px}.primary{background:#e67e22}
+#menu{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,13,.9);border-radius:14px}.panel{width:86%;max-width:390px;background:#18202d;border:1px solid #3b4659;border-radius:18px;padding:20px;text-align:center;box-shadow:0 15px 50px #0008}.panel h2{margin:0 0 8px;font-size:30px}.panel p{color:#bdc6d5}.cars{display:flex;gap:8px;justify-content:center;margin:13px 0}.carpick{padding:10px 14px;font-size:24px;background:#293449}.selected{outline:3px solid #f39c12}.hidden{display:none!important}
+#gamebox{position:relative}#hint{text-align:center;color:#9da8ba;font-size:12px;margin:5px}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>🏎️ DODGE RUSH</h1>
+<div id="stats">
+<div class="stat">SCORE<b id="score">0</b></div><div class="stat">COINS<b id="coins">0</b></div>
+<div class="stat">LEVEL<b id="level">1</b></div><div class="stat">LIVES<b id="lives">❤️❤️❤️</b></div>
+</div>
+<div id="gamebox"><canvas id="game" width="480" height="640"></canvas>
+<div id="menu"><div class="panel" id="panel"></div></div></div>
+<div id="controls"><button id="left">◀</button><button id="right">▶</button><button id="nitro">⚡ NITRO</button></div>
+<p id="hint">Keyboard: ← → move • SPACE nitro • P pause</p>
+</div>
+<script>
+const c=document.getElementById("game"),x=c.getContext("2d"),menu=document.getElementById("menu"),panel=document.getElementById("panel");
+const scoreEl=document.getElementById("score"),coinsEl=document.getElementById("coins"),levelEl=document.getElementById("level"),livesEl=document.getElementById("lives");
+let best=+localStorage.getItem("drBestV3")||0,garage=+localStorage.getItem("drGarage")||0,selected=0;
+let car,traffic,coins,score,coinCount,speed,spawn,t,last,running=false,paused=false,nitro=false,lives=3,level=1,keys={left:false,right:false};
+const colors=["#f39c12","#e74c3c","#3498db","#9b59b6"];
+function menuHome(){
+ panel.innerHTML=`<h2>🏁 DODGE RUSH</h2><p>Race through traffic, collect coins and use nitro to survive.</p>
+ <p><b>Choose your car</b></p><div class="cars">
+ <button class="carpick selected" data-c="0">🟧</button><button class="carpick" data-c="1">🟥</button><button class="carpick" data-c="2">🟦</button><button class="carpick" data-c="3">🟪</button></div>
+ <button class="primary" id="play">START RACE</button><p>Best score: ${best}</p>`;
+ menu.classList.remove("hidden");
+ document.querySelectorAll(".carpick").forEach(b=>b.onclick=()=>{selected=+b.dataset.c;document.querySelectorAll(".carpick").forEach(q=>q.classList.remove("selected"));b.classList.add("selected")});
+ document.getElementById("play").onclick=start;
+}
+function start(){
+ car={x:218,y:535,w:44,h:78};traffic=[];coins=[];score=0;coinCount=0;speed=210;spawn=.4;lives=3;level=1;nitro=false;paused=false;running=true;last=performance.now();
+ menu.classList.add("hidden");updateUI();requestAnimationFrame(loop);beep(440,.08);
+}
+function updateUI(){scoreEl.textContent=Math.floor(score);coinsEl.textContent=coinCount;levelEl.textContent=level;livesEl.textContent="❤️".repeat(lives)+"🖤".repeat(3-lives)}
+function addTraffic(){const lanes=[95,162,229,296,363],lane=lanes[Math.floor(Math.random()*lanes.length)];traffic.push({x:lane-22,y:-90,w:44,h:78,type:Math.floor(Math.random()*3)})}
+function addCoin(){coins.push({x:65+Math.random()*350,y:-20,r:11})}
+function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function damage(){lives--;beep(120,.15);if(lives<=0){end();return}traffic=[];car.x=218;updateUI()}
+function update(dt){
+ if(keys.left)car.x-=350*dt;if(keys.right)car.x+=350*dt;car.x=Math.max(60,Math.min(376,car.x));
+ if(nitro)speed=Math.min(speed+dt*300,520);else speed+=dt*7;
+ spawn-=dt;if(spawn<=0){addTraffic();if(Math.random()<.7)addCoin();spawn=Math.max(.22,.82-speed/700)}
+ traffic.forEach(o=>o.y+=speed*dt);coins.forEach(o=>o.y+=(speed*dt));
+ for(let i=traffic.length-1;i>=0;i--)if(overlap(car,traffic[i])){traffic.splice(i,1);damage();if(!running)return;break}
+ coins=coins.filter(o=>{const dx=car.x+22-o.x,dy=car.y+39-o.y;if(Math.hypot(dx,dy)<30){coinCount++;beep(800,.05);return false}return o.y<670});
+ traffic=traffic.filter(o=>o.y<680);score+=dt*(nitro?16:10);
+ level=1+Math.floor(score/100);updateUI();
+}
+function drawCar(px,py,w,h,player,type=0){
+ x.fillStyle=player?colors[selected]:["#d94a4a","#2e86de","#8e44ad"][type];x.fillRect(px,py,w,h);
+ x.fillStyle="#16202b";x.fillRect(px+7,py+13,w-14,24);x.fillStyle="#c9f2ff";x.fillRect(px+10,py+17,w-20,8);
+ x.fillStyle="#111";x.fillRect(px-3,py+12,7,18);x.fillRect(px+w-4,py+12,7,18);x.fillRect(px-3,py+h-30,7,18);x.fillRect(px+w-4,py+h-30,7,18);
+ if(player){x.fillStyle="#fff";x.fillRect(px+8,py+h-12,w-16,4);if(nitro){x.fillStyle="#39c5ff";x.fillRect(px+12,py+h,7,16);x.fillRect(px+25,py+h,7,16)}}
+}
+function draw(){
+ x.clearRect(0,0,c.width,c.height);x.fillStyle="#3c3c3c";x.fillRect(0,0,480,640);x.fillStyle="#267b3b";x.fillRect(0,0,55,640);x.fillRect(425,0,55,640);
+ x.fillStyle="#f4d03f";x.fillRect(55,0,5,640);x.fillRect(420,0,5,640);x.fillStyle="#eee";let off=(performance.now()/5)%80;for(let y=-80+off;y<680;y+=80){x.fillRect(156,y,7,38);x.fillRect(317,y,7,38)}
+ coins.forEach(o=>{x.beginPath();x.fillStyle="#ffd43b";x.arc(o.x,o.y,o.r,0,Math.PI*2);x.fill();x.fillStyle="#765000";x.font="bold 14px Arial";x.textAlign="center";x.fillText("$",o.x,o.y+5)});
+ traffic.forEach(o=>drawCar(o.x,o.y,o.w,o.h,false,o.type));drawCar(car.x,car.y,car.w,car.h,true);
+ if(paused){x.fillStyle="#000b";x.fillRect(0,0,480,640);x.fillStyle="#fff";x.textAlign="center";x.font="bold 44px Arial";x.fillText("PAUSED",240,300);x.textAlign="left"}
+}
+function loop(now){if(!running)return;let dt=Math.min(.035,(now-last)/1000);last=now;if(!paused)update(dt);draw();requestAnimationFrame(loop)}
+function end(){running=false;let s=Math.floor(score);if(s>best){best=s;localStorage.setItem("drBestV3",best)}menu.classList.remove("hidden");panel.innerHTML=`<h2>🏁 RACE OVER</h2><p>Score: <b>${s}</b></p><p>Coins: <b>${coinCount}</b> • Level: <b>${level}</b></p><p>Best: <b>${best}</b></p><button class="primary" id="again">RACE AGAIN</button><br><button class="small" id="home">MAIN MENU</button>`;document.getElementById("again").onclick=start;document.getElementById("home").onclick=menuHome}
+function toggleNitro(on){nitro=on&&running&&!paused}
+function hold(b,d){b.addEventListener("pointerdown",()=>keys[d]=true);["pointerup","pointercancel","pointerleave"].forEach(e=>b.addEventListener(e,()=>keys[d]=false))}
+hold(document.getElementById("left"),"left");hold(document.getElementById("right"),"right");
+const nb=document.getElementById("nitro");nb.addEventListener("pointerdown",()=>toggleNitro(true));["pointerup","pointercancel","pointerleave"].forEach(e=>nb.addEventListener(e,()=>toggleNitro(false)));
+addEventListener("keydown",e=>{if(e.key==="ArrowLeft")keys.left=true;if(e.key==="ArrowRight")keys.right=true;if(e.code==="Space"){e.preventDefault();toggleNitro(true)}if(e.key.toLowerCase()==="p"&&running){paused=!paused}});
+addEventListener("keyup",e=>{if(e.key==="ArrowLeft")keys.left=false;if(e.key==="ArrowRight")keys.right=false;if(e.code==="Space")toggleNitro(false)});
+function beep(freq,d){try{const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();o.frequency.value=freq;g.gain.value=.04;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d)}catch(e){}}
+menuHome();draw();
+</script>
+</body></html>
